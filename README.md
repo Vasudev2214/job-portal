@@ -42,7 +42,7 @@ The project is structured in two main parts:
 
 ### 1. Clone the Repository:
 ```bash
-git clone https://github.com/Vasudev2214/job-portal.git
+git clone git@github.com:Vasudev2214/job-portal.git
 ```
 
 ### 2. Backend Setup:
