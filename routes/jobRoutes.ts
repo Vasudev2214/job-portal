@@ -1,22 +1,25 @@
 import express from "express";
 import {
-  getJobs,
-  getSingleJob,
   createJob,
-  updateJob,
-  deleteJob,
-  applyJob,
+  getJobs,
+  getJobById,
+  applyForJob,
+  getMyApplications,
 } from "../controllers/jobController";
-import { protect } from "../middlewares/auth";
+import { authenticateUser, authorizeRoles } from "../middlewares/authMiddleware";
 
 const router = express.Router();
 
-router.route("/").get(getJobs).post(protect, createJob);
-router
-  .route("/:jobId")
-  .get(getSingleJob)
-  .put(protect, updateJob)
-  .delete(protect, deleteJob);
-router.route("/:jobId/apply").post(protect, applyJob);
+// ✅ Protect job creation (Optional: Allow only Admins)
+router.post("/", authenticateUser, authorizeRoles(["admin"]), createJob);
+
+// ✅ Public Routes
+router.get("/", getJobs);
+router.get("/my-applications", authenticateUser, getMyApplications);
+router.get("/:id", getJobById);
+
+// ✅ Protected Routes
+router.post("/apply", authenticateUser, applyForJob);
+
 
 export default router;

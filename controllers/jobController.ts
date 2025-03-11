@@ -1,119 +1,120 @@
 import { Request, Response } from "express";
 import asyncHandler from "express-async-handler";
 import prisma from "../utils/prisma";
-import { IUserRequest } from "../middlewares/auth";
 
-// @Desc Get Jobs
-// @Route /api/job
-// @Method GET
-export const getJobs = asyncHandler(async (req: Request, res: Response) => {
-  const jobs = await prisma.job.findMany({});
+interface AuthenticatedRequest extends Request {
+  user?: { id: number; name: string; email: string;role:string; resume?: string };
+}
 
-  res.status(201).json(jobs);
-});
-
-// @Desc Get Single Job
-// @Route /api/job/:jobId
-// @Method GET
-export const getSingleJob = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { jobId } = req.params;
-
-    const job = await prisma.job.findUnique({ where: { id: jobId } });
-
-    if (!job) {
-      res.status(401);
-      throw new Error("Job not found");
-    }
-
-    res.status(201).json(job);
-  }
-);
-
-// @Desc Create Job
-// @Route /api/job
-// @Method POST
+// ✅ Create a Job Posting
 export const createJob = asyncHandler(async (req: Request, res: Response) => {
-  const job = await prisma.job.create({
-    data: req.body,
-  });
+  const { title, description, company, location, salary } = req.body;
 
-  res.status(201).json(job);
-});
-
-// @Desc Update Job
-// @Route /api/job/:jobId
-// @Method PUT
-export const updateJob = asyncHandler(async (req: Request, res: Response) => {
-  const { jobId } = req.params;
-
-  let job = await prisma.job.findUnique({ where: { id: jobId } });
-
-  if (!job) {
-    res.status(401);
-    throw new Error("Job not found");
+  if (!title || !description || !company || !location) {
+    res.status(400).json({ success: false, message: "Please provide all required job details" });
+    return;
   }
 
-  job = await prisma.job.update({
-    where: { id: jobId },
-    data: req.body,
-  });
+  const salaryValue = salary ? parseFloat(salary) : null; // Convert to float or set null
 
-  res.status(201).json(job);
+const job = await prisma.job.create({
+  data: {
+    title,
+    description,
+    company,
+    location,
+    salary: salaryValue, // Ensure it's a number
+  },
 });
 
-// @Desc Delete Job
-// @Route /api/job/:jobId
-// @Method DELETE
-export const deleteJob = asyncHandler(async (req: Request, res: Response) => {
-  const { jobId } = req.params;
+  res.status(201).json({ success: true, message: "Job created successfully", job });
+});
+
+export const getJobs = asyncHandler(async (req: Request, res: Response) => {
+  const jobs = await prisma.job.findMany({ include: { applications: true } });
+  res.json(jobs);
+});
+
+
+export const getJobById = asyncHandler(async (req: Request, res: Response) => {
+  const jobId = Number(req.params.id);
+
+  if (!jobId || isNaN(jobId)) {
+    res.status(400).json({ success: false, message: "Invalid Job ID format" });
+    return;
+  }
 
   const job = await prisma.job.findUnique({ where: { id: jobId } });
 
   if (!job) {
-    res.status(401);
-    throw new Error("Job not found");
+    res.status(404).json({ success: false, message: "Job not found" });
+    return;
   }
 
-  await prisma.job.delete({ where: { id: jobId } });
-
-  res.status(201).json({ message: "Job successfully deleted" });
+  res.json(job);
 });
 
-// @Desc Apply For a Job
-// @Route /api/jobs/:jobId/apply
-// @Method POST
-export const applyJob = asyncHandler(
-  async (req: IUserRequest, res: Response) => {
-    const { jobId } = req.params;
-    const userId = req.user.id;
-
-    const jobExist = await prisma.job.findUnique({ where: { id: jobId } });
-
-    if (!jobExist) {
-      res.status(401);
-      throw new Error("Job not found");
-    }
-
-    const checkApply = await prisma.application.findMany({
-      where: {
-        userId,
-        jobId,
-      },
-    });
-
-    if (checkApply.length > 0) {
-      res.status(401);
-      throw new Error("Already Applied");
-    }
-
-    const app = await prisma.application.create({
-      data: {
-        userId,
-        jobId,
-      },
-    });
-
-    res.status(201).json(app);
+// ✅ Apply for a Job
+export const applyForJob = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, message: "Unauthorized - No user found in request." });
+    return;
   }
-);
+
+  const jobId = Number(req.body.jobId);
+  const userId = req.user.id;
+
+  if (!jobId || isNaN(jobId)) {
+    res.status(400).json({ success: false, message: "Invalid Job ID format" });
+    return;
+  }
+
+  const job = await prisma.job.findUnique({ where: { id: jobId } });
+
+  if (!job) {
+    res.status(404).json({ success: false, message: "Job not found" });
+    return;
+  }
+
+  const existingApplication = await prisma.application.findFirst({
+    where: { jobId, userId },
+  });
+
+  if (existingApplication) {
+    res.status(400).json({ success: false, message: "You have already applied for this job" });
+    return;
+  }
+
+  const application = await prisma.application.create({
+    data: { jobId, userId },
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Application submitted successfully",
+    application,
+  });
+});
+
+export const getMyApplications = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, message: "Unauthorized - No user found in request." });
+    return;
+  }
+  console.log("🔹 User ID from request:", req.user.id); // ✅ Debugging
+  
+
+  
+  const applications = await prisma.application.findMany({
+    where: { userId: req.user.id },
+    include: { job: { select: { id: true, title: true, company: true } } },
+  });
+  console.log("✅ Applications found:", applications); // ✅ Debugging
+
+  if (!applications.length) {
+    res.status(404).json({ success: false, message: "No job applications found" });
+    return;
+  }
+
+  res.json({ success: true, applications });
+});
